@@ -1,9 +1,15 @@
 import { MODULE_BY_KEY } from '@/data/modules'
-import { allRows, listRows, resetRows, saveRows } from '@/data/local-store'
+import { allRows, listRows, resetRows, saveRows } from '@/data/store'
+import { archiveWaterRow } from '@/api/warning-service'
 import type { ActionResult, EntryRow, ModuleMeta, OverviewResult, PageResult } from '@/data/types'
 
 // 会写进数据的「往回走」动作：命中就把这条记录标成异常态，看板上能一眼看出来。
 const NEGATIVE_ACTIONS = ['撤销', '作废', '拒绝', '驳回', '停用', '忽略', '下线', '回滚']
+
+// 有专门领域编排的动作不走通用状态流转：水位归档要冻结当时判定结论。
+const SPECIAL_HANDLERS: Record<string, (id: number) => ActionResult> = {
+  'waterlevel:归档记录': archiveWaterRow,
+}
 
 export function moduleMeta(key: string): ModuleMeta {
   const meta = MODULE_BY_KEY.get(key)
@@ -42,6 +48,10 @@ export function runAction(key: string, id: number, action: string): ActionResult
   const current = String(rows[index].status)
   if (current === target) {
     return { ok: false, message: `${meta.entity}已经是「${target}」，不用重复操作` }
+  }
+  const special = SPECIAL_HANDLERS[`${key}:${action}`]
+  if (special) {
+    return special(id)
   }
   const lastStatus = meta.statuses[meta.statuses.length - 1]
   const updated: EntryRow = {

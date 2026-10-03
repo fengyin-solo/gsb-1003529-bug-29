@@ -3,10 +3,12 @@
     <header class="page-head">
       <div>
         <h2>巡检记录管理</h2>
-        <p class="page-desc">维护巡检记录，围绕记录编号、站点编号、巡检日期、巡检人员做登记、筛选与状态流转。</p>
+        <p class="page-desc">
+          维护巡检记录。「阈值联动」待办由阈值发布事务生成/回收：站点水位达到黄色及以上才下发，
+          停用配置或级别回落时未关闭待办一并撤回，已处置记录作为历史保留。
+        </p>
       </div>
       <div class="page-actions">
-        <button class="btn primary" type="button" @click="openCreate">登记巡检记录</button>
         <button class="btn" type="button" @click="exportRows">导出巡检记录清单</button>
       </div>
     </header>
@@ -43,7 +45,12 @@
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)">
-          <td v-for="column in columns" :key="column">{{ row[column] ?? '—' }}</td>
+          <td v-for="column in columns" :key="column">
+            <template v-if="column === '来源' && isLinked(row)">
+              <span class="tag tag-link">阈值联动</span>
+            </template>
+            <template v-else>{{ row[column] === '' || row[column] === undefined ? '—' : row[column] }}</template>
+          </td>
           <td>{{ row.status }}</td>
           <td class="row-actions">
             <button
@@ -58,13 +65,13 @@
           </td>
         </tr>
         <tr v-if="!rows.length">
-          <td :colspan="columns.length + 2" class="empty-state">暂无巡检记录数据，可先登记巡检记录</td>
+          <td :colspan="columns.length + 2" class="empty-state">暂无巡检记录数据</td>
         </tr>
       </tbody>
     </table>
 
     <footer class="page-foot">
-      <span>共 {{ total }} 条巡检记录记录</span>
+      <span>共 {{ total }} 条巡检记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
   </section>
@@ -79,25 +86,37 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { isAutoTodo } from '@/data/warning'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('inspection')
-const columns = ["记录编号", "站点编号", "巡检日期", "巡检人员", "检查项目", "发现问题", "处理措施", "巡检状态"]
+const columns = ["记录编号", "站点编号", "巡检日期", "巡检人员", "检查项目", "发现问题", "处理措施", "巡检状态", "来源", "关联配置"]
 const actions = ["完成巡检", "报告故障", "确认处置"]
 const statuses = ["待巡检", "已巡检", "发现故障", "已处置"]
-const stats = [{"label": "本月巡检次数", "value": 0}, {"label": "已巡检站点", "value": 0}, {"label": "待处置故障", "value": 0}]
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+
+function isLinked(row: EntryRow): boolean {
+  return isAutoTodo(row)
+}
+
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
     count: rows.value.filter((row) => String(row.status) === status).length,
   })),
 )
+
+// 统计与阈值发布事务写入的状态同源：事务回滚时这些计数也一起回到发布前。
+const stats = computed(() => [
+  { label: '巡检记录总数', value: rows.value.length },
+  { label: '阈值联动待办（待巡检）', value: rows.value.filter((row) => isLinked(row) && String(row.status) === '待巡检').length },
+  { label: '待处置故障', value: rows.value.filter((row) => String(row.status) === '发现故障').length },
+])
 
 function resetFilters() {
   filters.value = {}
@@ -106,10 +125,6 @@ function resetFilters() {
 
 function exportRows() {
   downloadEntries(meta.key)
-}
-
-function openCreate() {
-  errorMessage.value = '巡检记录登记入口尚未接入审批流'
 }
 
 function runAction(action: string, row: EntryRow) {
@@ -124,13 +139,9 @@ function runAction(action: string, row: EntryRow) {
 
 function reload() {
   errorMessage.value = ''
-  try {
-    const payload = listEntries(meta.key, filters.value)
-    rows.value = payload.items
-    total.value = payload.total
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : '巡检记录列表读取失败'
-  }
+  const payload = listEntries(meta.key, filters.value)
+  rows.value = payload.items
+  total.value = payload.total
 }
 
 onMounted(reload)

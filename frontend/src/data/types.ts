@@ -5,7 +5,8 @@ export type EntryRow = {
   status: string
   pending: boolean
   abnormal: boolean
-  [field: string]: string | number | boolean
+  // 判定快照等扩展字段允许为空：未触发级别、未绑定配置版本时用 null 表达。
+  [field: string]: string | number | boolean | null
 }
 
 export type ModuleMeta = {

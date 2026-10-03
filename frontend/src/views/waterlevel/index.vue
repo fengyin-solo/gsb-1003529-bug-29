@@ -3,16 +3,17 @@
     <header class="page-head">
       <div>
         <h2>水位监测管理</h2>
-        <p class="page-desc">维护水位记录，围绕记录编号、站点编号、观测时间、当前水位做登记、筛选与状态流转。</p>
+        <p class="page-desc">异常判定统一按站点最新「已生效」阈值执行：取达到阈值的最高预警级别；停用配置或无生效配置时不产生级别与巡检待办，已归档记录结论留档。</p>
       </div>
       <div class="page-actions">
         <button class="btn primary" type="button" @click="openCreate">登记水位记录</button>
+        <button class="btn" type="button" @click="rejudge">按生效阈值重新判定</button>
         <button class="btn" type="button" @click="exportRows">导出水位监测清单</button>
       </div>
     </header>
 
     <div class="stat-row">
-      <article v-for="item in stats" :key="item.label" class="stat-card">
+      <article v-for="item in statCards" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
         <strong class="stat-value">{{ item.value }}</strong>
       </article>
@@ -64,7 +65,7 @@
     </table>
 
     <footer class="page-foot">
-      <span>共 {{ total }} 条水位监测记录</span>
+      <span>共 {{ total }} 条水位记录；预警级别来自统一判定，已通过/异常值为归档记录，级别与配置版本不再重算</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
   </section>
@@ -79,19 +80,29 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { rejudgeAllOpen, waterStats, WATERLEVEL_KEY } from '@/data/warning-chain'
 import type { EntryRow } from '@/data/types'
 
-const meta = moduleMeta('waterlevel')
-const columns = ["记录编号", "站点编号", "观测时间", "当前水位", "警戒水位", "保证水位", "水位变幅", "记录状态"]
+const meta = moduleMeta(WATERLEVEL_KEY)
+const columns = ["记录编号", "站点编号", "观测时间", "当前水位", "警戒水位", "保证水位", "水位变幅", "预警级别", "触发配置版本号", "判定时间", "记录状态"]
 const actions = ["提交审核", "确认通过", "标记异常"]
 const statuses = ["已采集", "待审核", "已通过", "异常值"]
-const stats = [{"label": "今日采集数", "value": 0}, {"label": "超警戒站次", "value": 0}, {"label": "待审核记录", "value": 0}]
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
-const filterFields = columns.slice(0, 3)
+const filterFields = ["记录编号", "站点编号", "观测时间"]
+
+const statCards = computed(() => {
+  const stats = waterStats()
+  return [
+    { label: '今日采集数', value: stats.todayCount },
+    { label: '开放预警站次', value: stats.alarmCount },
+    { label: '待审核记录', value: stats.pendingReviewCount },
+  ]
+})
+
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
@@ -112,6 +123,15 @@ function openCreate() {
   errorMessage.value = '水位记录登记入口尚未接入审批流'
 }
 
+function rejudge() {
+  errorMessage.value = ''
+  const result = rejudgeAllOpen()
+  errorMessage.value = result.message
+  if (result.ok) {
+    reload()
+  }
+}
+
 function runAction(action: string, row: EntryRow) {
   errorMessage.value = ''
   const result = applyAction(meta.key, Number(row.id), action)
@@ -119,6 +139,7 @@ function runAction(action: string, row: EntryRow) {
     errorMessage.value = result.message
     return
   }
+  errorMessage.value = result.message
   reload()
 }
 

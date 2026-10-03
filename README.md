@@ -68,4 +68,9 @@ npm run build
 - 字段、状态、动作与流转目标集中在 `frontend/src/data/modules.ts`；示例数据在
   `frontend/src/data/seed.ts`。
 - 状态流转只允许在 `local-service.ts` 里改，页面组件不做业务判断。
-- 想回到初始数据：清掉浏览器里 `hydrology-monitor-station:entries` 这一项，或调用 `resetModule(模块)`。
+- 预警阈值 → 水位异常判定 → 巡检待办的统一链路在 `frontend/src/data/warning-chain.ts`：
+  只有「已生效」的最新版本参与判定（取达到阈值的最高预警级别），发布/停用是一次事务，
+  任一判定失败则配置、统计与待办一起回退；已归档记录不重算、结论留档。
+  详见 `docs/warning-chain-fix-2026-10-03.md`（仓库根目录）。
+- 想回到初始数据：清掉浏览器里 `hydrology-monitor-station:entries:v2` 这一项，或调用 `resetModule(模块)`。
+- 阈值链路场景验证（不依赖浏览器）：`cd frontend && npm run verify:warning-chain`。
